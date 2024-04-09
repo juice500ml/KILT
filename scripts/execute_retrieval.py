@@ -10,6 +10,10 @@ import argparse
 from kilt import retrieval
 from kilt import kilt_utils as utils
 
+# import jnius_config
+
+# from jnius import autoclass
+
 
 def execute(
     logger, test_config_json, retriever, log_directory, model_name, output_folder
@@ -75,6 +79,8 @@ def main(args):
         else:
             retriever = BLINK_connector.BLINK.from_default_config(args.model_name)
     elif args.model_name == "bm25":
+        # BooleanQuery = autoclass("org.apache.lucene.search.BooleanQuery")
+        # BooleanQuery.setMaxClauseCount(Integer.MAX_VALUE)
         # BM25
         from kilt.retrievers import BM25_connector
 
