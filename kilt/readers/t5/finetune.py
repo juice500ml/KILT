@@ -15,25 +15,13 @@ import torch
 from torch.utils.data import DataLoader
 from torch.utils.data.dataset import ConcatDataset
 from transformers import get_linear_schedule_with_warmup
-# from transformers.tokenization_utils import trim_batch
+from transformers.tokenization_utils import trim_batch
 
 from base_transformer import BaseTransformer, add_generic_args, generic_train
 from data import KiltDataset, seq2seq_to_kilt, dataset_config
 from eval_downstream import normalize_answer
 
 logger = logging.getLogger(__name__)
-
-def trim_batch(
-    input_ids,
-    pad_token_id,
-    attention_mask=None,
-):
-    """Remove columns that are populated exclusively by pad_token_id"""
-    keep_column_mask = input_ids.ne(pad_token_id).any(dim=0)
-    if attention_mask is None:
-        return input_ids[:, keep_column_mask]
-    else:
-        return (input_ids[:, keep_column_mask], attention_mask[:, keep_column_mask])
 
 
 class Seq2seqTransformer(BaseTransformer):
@@ -85,30 +73,26 @@ class Seq2seqTransformer(BaseTransformer):
         self.data_dir = self.hparams.data_dir
         self.output_dir = self.hparams.output_dir
 
-    def forward(self, input_ids, attention_mask=None, decoder_input_ids=None, labels=None):
+    def forward(self, input_ids, attention_mask=None, decoder_input_ids=None, lm_labels=None):
         return self.model(
-            input_ids, attention_mask=attention_mask, labels=labels,
+            input_ids, attention_mask=attention_mask, lm_labels=lm_labels,
         )
 
     def _step(self, batch):
         pad_token_id = self.tokenizer.pad_token_id
         source_ids, source_mask, y, ids = batch["source_ids"], batch["source_mask"], batch["target_ids"], batch["ids"]
 
-        labels = y.clone()
-        labels[y == pad_token_id] = -100
+        lm_labels = y.clone()
+        lm_labels[y == pad_token_id] = -100
 
-        outputs = self(source_ids, attention_mask=source_mask, labels=labels, )
+        outputs = self(source_ids, attention_mask=source_mask, lm_labels=lm_labels, )
 
         loss = outputs[0]
-
-        # print(f"_step loss grad_fn: {loss.grad_fn}")
 
         return loss
 
     def training_step(self, batch, batch_idx):
         loss = self._step(batch)
-
-        # print(f"Loss grad_fn: {loss.grad_fn}")
 
         tensorboard_logs = {"train_loss": loss}
         return {"loss": loss, "log": tensorboard_logs}
@@ -135,14 +119,12 @@ class Seq2seqTransformer(BaseTransformer):
         preds = [self.tokenizer.decode(g) for g in generated_ids]
         target = [self.tokenizer.decode(t) for t in y]
         loss = self._step(batch)
-        self.log('val_loss', loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
         sources = [self.tokenizer.decode(s) for s in source_ids]
 
         return {"val_loss": loss, 'sources': sources, "preds": preds, "target": target, "ids": batch["ids"]}
 
     def validation_end(self, outputs):
         avg_loss = torch.stack([x["val_loss"] for x in outputs]).mean()
-        self.log('avg_val_loss', avg_loss, prog_bar=True, logger=True)
         tensorboard_logs = {"val_loss": avg_loss}
 
         preds = []
@@ -232,7 +214,7 @@ class Seq2seqTransformer(BaseTransformer):
         dataloader = DataLoader(concat_dataset, batch_size=batch_size, shuffle=shuffle, collate_fn=self.collate_fn)
 
         print(type_path, dataloader.batch_size, concat_dataset.__len__())
-        return dataloader 
+        return dataloader
 
     def train_dataloader(self) -> DataLoader:
         dataloader = self.get_dataloader("train", batch_size=self.train_batch_size, shuffle=True)
