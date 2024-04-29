@@ -16,6 +16,7 @@ import torch
 from tqdm import tqdm
 
 from finetune import Seq2seqTransformer
+from kilt.calculate_adaptive_threshold import get_adaptive_threshold_from_jsonl
 
 
 SEED = 42
@@ -71,7 +72,7 @@ def chunks(lst, n):
 #             output_file.flush()
 
 
-def generate_answers(questions, output_file_path, model, tokenizer, batch_size, device, contexts, k, M, task):
+def generate_answers(questions, output_file_path, model, tokenizer, batch_size, device, contexts, top_k, M, task, threshold):
     model.config.max_length = 512
     output_file = Path(output_file_path).open("w")
 
@@ -89,6 +90,11 @@ def generate_answers(questions, output_file_path, model, tokenizer, batch_size, 
         for question, context_passages in zip(batch_questions, batch_contexts):
             task_prefix = f'{task}: ' if task else ''
             combined_input = task_prefix + question
+
+            if threshold is None:
+                k = top_k
+            else:
+                k = len([1 for item in context_passages if float(item["score"]) >= threshold])
 
             # Combine question with top-k context passages
             if k > 0:
@@ -257,6 +263,11 @@ def run_generate():
         default=1,
         help="Number of top context passages to include.",
     )
+    parser.add_argument(
+        "--adaptive_k",
+        action="store_true",
+        help="Turn on adaptive k thresholding"
+    )
 
     args = parser.parse_args()
     args.device = torch.device(
@@ -309,8 +320,11 @@ def run_generate():
     elif args.dataset == 'wow':
         task = "Dialogue"
 
+    threshold = None
+    if args.adaptive_k:
+        threshold = get_adaptive_threshold_from_jsonl(args.context_path, args.top_k)
     generate_answers(
-        source_lns, args.output_path, model, tokenizer, args.batch_size, args.device, contexts, args.top_k, M, task
+        source_lns, args.output_path, model, tokenizer, args.batch_size, args.device, contexts, args.top_k, M, task, threshold
     )
     # output_lns = [x.rstrip() for x in open(args.output_path).readlines()]
     # reference_lns = [x.rstrip() for x in open(args.reference_path).readlines()]
