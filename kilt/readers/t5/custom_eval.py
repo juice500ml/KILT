@@ -52,8 +52,11 @@ def f1_score(prediction, ground_truth):
     f1 = (2 * precision * recall) / (precision + recall)
     return f1, recall
 
+def exact_match_score(prediction, ground_truth):
+    return normalize_answer(prediction) == normalize_answer(ground_truth)
+
 def evaluate(gold_answers, predictions):
-    # exact_match = 0
+    exact_match = 0
     total = len(gold_answers)
     f1_scores = []
     recalls = []
@@ -61,17 +64,17 @@ def evaluate(gold_answers, predictions):
     assert len(gold_answers) == len(predictions)
 
     for ground_truth, prediction in zip(gold_answers, predictions):
-        # exact_match += int(exact_match_score(prediction, ground_truth))
+        exact_match += int(exact_match_score(prediction, ground_truth))
         f1, recall = f1_score(prediction, ground_truth)
         f1_scores.append(f1)
         recalls.append(recall)
 
-    # exact_match = 100.0 * exact_match / total
+    exact_match = 100.0 * exact_match / total
     macro_f1 = np.mean(f1_scores) * 100.0
     answer_recall = np.mean(recalls) * 100.0
 
     return {
-        # "exact_match": exact_match,
+        "exact_match": exact_match,
         "macro_f1": macro_f1,
         "answer_recall": answer_recall,
     }
@@ -100,39 +103,29 @@ def main(args):
     PATH = "kilt/readers/t5/f1"
     file_path = f"{PATH}/{args.dataset}_results.json"
 
-    if args.mode == "eval":
-        gold_answers = load_file(args.gold_answers)
-        predictions = load_file(args.predictions)
+    gold_answers = load_file(args.gold_answers)
+    predictions = load_file(args.predictions)
 
-        results = evaluate(gold_answers, predictions)
+    results = evaluate(gold_answers, predictions)
 
-        print("Macro F1: {:.2f}".format(results['macro_f1']))
-        print("Answer Recall: {:.2f}".format(results['answer_recall']))
+    print("Macro F1: {:.2f}".format(results['macro_f1']))
+    print("Answer Recall: {:.2f}".format(results['answer_recall']))
+    print("Exact Match: {:.2f}".format(results['exact_match']))
 
-        data = {}
+    data = {}
 
-        if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
-            with open(file_path, "r") as file:
-                data = json.load(file)
-
-        data[f"k={args.k}"] = results
-
-        with open(file_path, "w") as file:
-            json.dump(data, file, indent=4)
-
-    elif args.mode == "plot":
-        f1 = []
+    if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
         with open(file_path, "r") as file:
             data = json.load(file)
+    else:
+        # create the file if it doesn't exist
+        with open(file_path, "w") as file:
+            json.dump({}, file)
 
-        sorted_keys = sorted(data.keys(), key=lambda x: int(x.split("=")[1]))
+    data[f"k={args.k}"] = results
 
-        for key in sorted_keys:
-            f1.append(data[key]['macro_f1'])
-    
-        k = list(range(len(sorted_keys)))
-
-        plot_results(k, f1, PATH, args.dataset)
+    with open(file_path, "w") as file:
+        json.dump(data, file, indent=4)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -159,12 +152,6 @@ if __name__ == "__main__":
         type=int,
         default=1,
         help="Number of top context passages to include.",
-    )
-    parser.add_argument(
-        "--mode",
-        type=str,
-        default="eval",
-        help="Mode of operation.",
     )
 
     args = parser.parse_args()
