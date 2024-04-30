@@ -76,9 +76,9 @@ def plot_k_vs_macro_f1_multiple(fixed, M_top_k, M_adaptive_k, dataset):
     
     # Plotting the results
     plt.figure(figsize=(10, 6))
-    plt.plot(ks, fixed_macro_f1_scores, marker='o', linestyle='-', color='b', label='Fixed')
-    plt.plot(ks, M_top_k_macro_f1_scores, marker='o', linestyle='-', color='y', label='M_Top-k')
-    plt.plot(ks, M_adaptive_k_macro_f1_scores, marker='o', linestyle='-', color='g', label='M_Adaptive-k')
+    plt.plot(ks, fixed_macro_f1_scores, marker='o', linestyle='-', color='blue', label='Fixed')
+    plt.plot(ks, M_top_k_macro_f1_scores, marker='o', linestyle='-', color='green', label='M_Top-k')
+    plt.plot(ks, M_adaptive_k_macro_f1_scores, marker='o', linestyle='-', color='orange', label='M_Adaptive-k')
     plt.title(f'{dataset}')
     plt.xlabel('k')
     plt.ylabel('Macro F1 Score')
