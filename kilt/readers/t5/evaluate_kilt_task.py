@@ -16,7 +16,7 @@ import torch
 from tqdm import tqdm
 
 from finetune import Seq2seqTransformer
-from kilt.calculate_adaptive_threshold import get_adaptive_threshold_from_jsonl
+from calculate_adaptive_threshold import get_adaptive_threshold_from_jsonl
 
 
 SEED = 42
@@ -95,6 +95,8 @@ def generate_answers(questions, output_file_path, model, tokenizer, batch_size, 
                 k = top_k
             else:
                 k = len([1 for item in context_passages if float(item["score"]) >= threshold])
+
+            M = M // k if k > 0 else 0
 
             # Combine question with top-k context passages
             if k > 0:
@@ -177,23 +179,23 @@ def calculate_rouge(output_lns, reference_lns, score_path):
 def run_generate():
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "model_size",
+        "--model_size",
         type=str,
         help="T5 model size, either 't5-small', 't5-base', 't5-large', 't5-3b', 't5-11b'. Defaults to 't5-base'.",
         default="t5-base",
     )
     parser.add_argument(
-        "input_path",
+        "--input_path",
         type=str,
         help="like nqa/test_articles_questions.txt",
     )
     parser.add_argument(
-        "output_path",
+        "--output_path",
         type=str,
         help="where to save summaries",
     )
     parser.add_argument(
-        "output_dir",
+        "--output_dir",
         type=str,
         help="where to save the model",
     )
@@ -253,12 +255,12 @@ def run_generate():
     )
 
     parser.add_argument(
-        "context_path",
+        "--context_path",
         type=str,
         help="Path to the JSONL file containing context passages.",
     )
     parser.add_argument(
-        "top_k",
+        "--top_k",
         type=int,
         default=1,
         help="Number of top context passages to include.",
@@ -292,7 +294,7 @@ def run_generate():
     checkpoints = list(
         sorted(
             glob.glob(
-                os.path.join(args.output_dir, "epoch=*-val_loss=*.ckpt"), recursive=True
+                os.path.join(args.output_dir, f"{args.dataset}.ckpt"), recursive=True
             )
         )
     )
@@ -300,6 +302,7 @@ def run_generate():
     # print(checkpoints)
 
     model = sq2sq.load_from_checkpoint(checkpoints[-1]).model
+
     tokenizer = sq2sq.tokenizer
 
     L = tokenizer.model_max_length
@@ -309,7 +312,8 @@ def run_generate():
     if args.top_k == 0:
         M = 0
     else:
-        M = (L - L_bar) // args.top_k
+        # M = (L - L_bar) // args.top_k
+        M = (L - L_bar)
 
     if args.dataset == 'fever':
         task = "Fact Checking"
