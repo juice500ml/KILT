@@ -148,6 +148,12 @@ if __name__ == "__main__":
         help="Name of the dataset.",
     )
     parser.add_argument(
+        "--path",
+        type=str,
+        default="results",
+        help="Path to save the results.",
+    )
+    parser.add_argument(
         "--k",
         type=int,
         default=1,
