@@ -9,6 +9,7 @@ import argparse
 import logging
 import pickle
 
+from tqdm import tqdm
 import blink.main_dense as main_dense
 from flair.models import SequenceTagger
 from flair.data import Sentence
@@ -46,7 +47,7 @@ class BLINK(Retriever):
         wikipedia_id2local_id = self.models[8]
 
         self.test_data = []
-        for element in queries_data:
+        for element in tqdm(queries_data):
 
             query = element["query"]
 
@@ -73,7 +74,7 @@ class BLINK(Retriever):
                 # Apply a NER system
                 sent = Sentence(query, use_tokenizer=True)
                 self.ner_model.predict(sent)
-                sent_mentions = sent.to_dict(tag_type="ner")["entities"]
+                sent_mentions = sent.get_spans("ner")
 
                 if len(sent_mentions) == 0:
                     # no mention
@@ -90,9 +91,9 @@ class BLINK(Retriever):
                 else:
                     # create a record for each mention detected
                     for hit in sent_mentions:
-                        left = query[: int(hit["start_pos"])].strip()
-                        mention = hit["text"]
-                        right = query[int(hit["end_pos"]) :].strip()
+                        left = query[: hit.start_position].strip()
+                        mention = hit.text
+                        right = query[hit.end_position :].strip()
 
                         record = {
                             "id": element["id"],

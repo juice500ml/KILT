@@ -13,7 +13,19 @@ import os
 import pathlib
 
 import torch.utils.data
-from transformers.tokenization_utils import trim_batch
+# from transformers.tokenization_utils import trim_batch
+
+def trim_batch(
+    input_ids,
+    pad_token_id,
+    attention_mask=None,
+):
+    """Remove columns that are populated exclusively by pad_token_id"""
+    keep_column_mask = input_ids.ne(pad_token_id).any(dim=0)
+    if attention_mask is None:
+        return input_ids[:, keep_column_mask]
+    else:
+        return (input_ids[:, keep_column_mask], attention_mask[:, keep_column_mask])
 
 dataset_task_map = {'nq': "Question Answering", "aidayago2": "Entity Linking", "cweb": "Entity Linking",
                     "fever": "Fact Checking", "hotpotqa": "Question Answering",
@@ -21,8 +33,11 @@ dataset_task_map = {'nq': "Question Answering", "aidayago2": "Entity Linking", "
                     "zeroshot": "Relation Extraction", "trex":"Slot Filling", "eli5":"Question Answering"}
 
 dataset_config = configparser.ConfigParser()
-location = os.path.join(pathlib.Path(__file__).parent, 'config_file')
+location = os.path.join(pathlib.Path(__file__).parent, 'config_file.ini')
 dataset_config.read(location)
+
+# print(location)
+# print(dataset_config.sections())
 
 
 def encode_seq(tokenizer, seqs, max_length, out_dir, dataset, side='source', type_path='train', pad_to_max_length=True,
@@ -31,7 +46,7 @@ def encode_seq(tokenizer, seqs, max_length, out_dir, dataset, side='source', typ
     lengths = []
 
     output_file = os.path.join(out_dir, dataset + "-" + type_path + "-" + side + ".encoded")
-    with open(output_file, "w") as f_out:
+    with open(output_file, "w", encoding='utf-8') as f_out:
         texts = []
         for text in seqs:
 
@@ -127,12 +142,16 @@ class KiltDataset(torch.utils.data.Dataset):
 
 
 def kilt_to_seq2seq(data_dir, dataset, type_path):
-    data_file = pathlib.Path(os.path.join(data_dir, dataset + '-' + type_path + "-kilt.jsonl"))
+    if dataset == 'zeroshot':
+        data_file = pathlib.Path(os.path.join(data_dir, 'structured_zeroshot' + '-' + type_path + "-kilt.jsonl"))
+    else:
+        data_file = pathlib.Path(os.path.join(data_dir, dataset + '-' + type_path + "-kilt.jsonl"))
     sources = []
     targets = []
     ids = []
     id_targets = {}
     if not data_file.exists():
+        print('@@@@ File not found:', data_file)
         return ids, sources, targets
 
     with open(data_file, "r") as f:

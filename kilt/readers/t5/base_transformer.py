@@ -37,7 +37,8 @@ class BaseTransformer(pl.LightningModule):
         "Initialize a model."
 
         super().__init__()
-        self.hparams = hparams
+        # self.hparams = hparams
+        self.save_hyperparameters(hparams)
         cache_dir = self.hparams.cache_dir if self.hparams.cache_dir else None
         self.config = AutoConfig.from_pretrained(
             self.hparams.config_name
@@ -59,8 +60,11 @@ class BaseTransformer(pl.LightningModule):
             cache_dir=cache_dir,
         )
 
+        for param in self.model.parameters():
+            param.requires_grad = True
+
     def is_logger(self):
-        return self.trainer.proc_rank <= 0
+        return self.trainer.global_rank <= 0
 
     def configure_optimizers(self):
         "Prepare optimizer and schedule (linear warmup and decay)"
@@ -93,13 +97,29 @@ class BaseTransformer(pl.LightningModule):
         self.opt = optimizer
         return [optimizer]
 
-    def optimizer_step(
-        self, epoch, batch_idx, optimizer, optimizer_idx, second_order_closure=None
-    ):
-        if self.trainer.use_tpu:
-            xm.optimizer_step(optimizer)
-        else:
-            optimizer.step()
+    # def optimizer_step(
+    #     self, epoch, batch_idx, optimizer, optimizer_idx, second_order_closure=None
+    # ):
+    #     if self.trainer.use_tpu:
+    #         xm.optimizer_step(optimizer)
+    #     else:
+    #         optimizer.step()
+    #     optimizer.zero_grad()
+    #     self.lr_scheduler.step()
+
+    def optimizer_step(self,
+                     epoch, 
+                    batch_idx, 
+                    optimizer, 
+                    optimizer_idx, 
+                    optimizer_closure, 
+                    on_tpu=None, 
+                    using_native_amp=None, 
+                    using_lbfgs=None
+                     ):
+
+        optimizer_closure()
+        optimizer.step()
         optimizer.zero_grad()
         self.lr_scheduler.step()
 
@@ -300,8 +320,8 @@ def generic_train(model: BaseTransformer, args: argparse.Namespace):
         )
 
     checkpoint_callback = pl.callbacks.ModelCheckpoint(
-        filepath=args.output_dir,
-        prefix="checkpoint",
+        dirpath=args.output_dir,
+        filename="{epoch}-{val_loss:.2f}",
         monitor="val_loss",
         mode="min",
         save_top_k=5,
@@ -311,10 +331,10 @@ def generic_train(model: BaseTransformer, args: argparse.Namespace):
         accumulate_grad_batches=args.gradient_accumulation_steps,
         gpus=args.n_gpu,
         max_epochs=args.num_train_epochs,
-        early_stop_callback=False,
+        # early_stop_callback=False,
         gradient_clip_val=args.max_grad_norm,
-        checkpoint_callback=checkpoint_callback,
-        callbacks=[LoggingCallback()],
+        # checkpoint_callback=checkpoint_callback,
+        callbacks=[LoggingCallback(), checkpoint_callback],
     )
 
     if args.fp16:
@@ -328,7 +348,7 @@ def generic_train(model: BaseTransformer, args: argparse.Namespace):
         train_params["gpus"] = 0
 
     if args.n_gpu > 1:
-        train_params["distributed_backend"] = "ddp"
+        train_params["strategy"] = "ddp"
 
     trainer = pl.Trainer(**train_params)
 
