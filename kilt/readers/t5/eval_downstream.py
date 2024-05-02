@@ -4,17 +4,21 @@
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
 
-
+from typing import List
 import argparse
 import pprint
 import re
 import string
 from rouge import Rouge
+import os
+import json
 
 from collections import Counter
 
-import kilt.eval_retrieval as retrieval_metrics
-from kilt import kilt_utils
+# from kilt import eval_retrieval as retrieval_metrics
+# from kilt import kilt_utils
+import eval_retrieval as retrieval_metrics
+import kilt_utils
 
 # utility to get gold answers
 def get_gold_answers(gold):
@@ -66,7 +70,10 @@ def normalize_answer(s):
     def lower(text):
         return text.lower()
 
-    return white_space_fix(remove_articles(remove_punc(lower(s))))
+    def remove_wrapper(text):
+        return re.sub(r"<([^>]+)>", r"\1", text)
+
+    return white_space_fix(remove_articles(remove_punc(remove_wrapper(lower(s)))))
 
 
 # F1 score definition
@@ -114,37 +121,30 @@ def _calculate_metrics(gold_records, guess_records):
     rougel = 0
 
     # kilt metrics
-    kilt_accuracy = 0
-    kilt_em = 0
-    kilt_f1 = 0
-    kilt_rougel = 0
+    # kilt_accuracy = 0
+    # kilt_em = 0
+    # kilt_f1 = 0
+    # kilt_rougel = 0
 
     for guess_item, gold_item in zip(guess_records, gold_records):
-
-        # check ids
-        assert (
-            str(gold_item["id"]).strip() == str(guess_item["id"]).strip()
-        ), "Items must have same order with same IDs"
 
         total_count += 1
         # check if each output of guess file exist in set of candidate answers
         gold_candidate_answers = get_gold_answers(gold_item)
 
-        conditions = (len(guess_item["output"]) == 1) and (
-            "answer" in guess_item["output"][0]
-        )
-        assert (
-            conditions
-        ), f"you should provide exactly one valid answer for {guess_item['id']}"
-        guess_answer = str(guess_item["output"][0]["answer"]).strip()
+        guess_answer = guess_item.strip()
 
         if len(guess_answer) == 0:
             # empty answer
             continue
 
         # 0. accuracy = strict exact match
+        if total_count == 1:
+            print(f"Guess: {guess_answer}")
+            print(f"Gold: {gold_candidate_answers}")
+
         local_accuracy = 0
-        if guess_answer in gold_candidate_answers:
+        if re.sub(r"<([^>]+)>", r"\1", guess_answer) in gold_candidate_answers:
             local_accuracy = 1
         accuracy += local_accuracy
 
@@ -167,44 +167,44 @@ def _calculate_metrics(gold_records, guess_records):
         rougel += local_rougel
 
         # KILT-metrics
-        Rprec = retrieval_metrics.rprecision(
-            guess_item, gold_item, rank_keys=["wikipedia_id"]
-        )
-        if Rprec == 1:
-            # 1. KILT-AC
-            kilt_accuracy += local_accuracy
+        # Rprec = retrieval_metrics.rprecision(
+        #     guess_item, gold_item, rank_keys=["wikipedia_id"]
+        # )
+        # if Rprec == 1:
+        #     # 1. KILT-AC
+        #     kilt_accuracy += local_accuracy
 
-            # 2. KILT-EM
-            kilt_em += local_em
+        #     # 2. KILT-EM
+        #     kilt_em += local_em
 
-            # 3. KILT-F1
-            kilt_f1 += local_f1
+        #     # 3. KILT-F1
+        #     kilt_f1 += local_f1
 
-            # 4. KILT-RL
-            kilt_rougel += local_rougel
+        #     # 4. KILT-RL
+        #     kilt_rougel += local_rougel
 
     if total_count > 0:
         accuracy /= total_count
         normalized_em /= total_count
         normalized_f1 /= total_count
         rougel /= total_count
-        kilt_accuracy /= total_count
-        kilt_em /= total_count
-        kilt_f1 /= total_count
-        kilt_rougel /= total_count
+        # kilt_accuracy /= total_count
+        # kilt_em /= total_count
+        # kilt_f1 /= total_count
+        # kilt_rougel /= total_count
 
     return {
-        "kilt": {
-            "KILT-accuracy": kilt_accuracy,
-            "KILT-em": kilt_em,
-            "KILT-f1": kilt_f1,
-            "KILT-rougel": kilt_rougel,
-        },
+        # "kilt": {
+        #     "KILT-accuracy": kilt_accuracy,
+        #     "KILT-em": kilt_em,
+        #     "KILT-f1": kilt_f1,
+        #     "KILT-rougel": kilt_rougel,
+        # },
         "downstream": {
             "accuracy": accuracy,
             "em": normalized_em,
             "f1": normalized_f1,
-            "rougel": rougel,
+            "rougel": rougel
         },
     }
 
@@ -241,26 +241,25 @@ def validate_input(gold_records, guess_records):
     return gold_records, guess_records
 
 
+def load_guess_file(file_path: str) -> List[str]:
+    with open(file_path, "r") as file:
+        data = [line.strip() for line in file.readlines()]
+
+    return data
+
+
 def evaluate(gold, guess):
     pp = pprint.PrettyPrinter(indent=4)
 
     gold_records = kilt_utils.load_data(gold)
-    guess_records = kilt_utils.load_data(guess)
+    # guess_records = kilt_utils.load_data(guess)
+    guess_records = load_guess_file(guess)
 
     # 0. validate input
-    gold_records, guess_records = validate_input(gold_records, guess_records)
+    # gold_records, guess_records = validate_input(gold_records, guess_records)
 
     # 1. downstream + kilt
     result = _calculate_metrics(gold_records, guess_records)
-
-    # 2. retrieval performance
-    retrieval_results = retrieval_metrics.compute(
-        gold_records, guess_records, ks=[1, 5], rank_keys=["wikipedia_id"]
-    )
-    result["retrieval"] = {
-        "Rprec": retrieval_results["Rprec"],
-        "recall@5": retrieval_results["recall@5"],
-    }
 
     pp.pprint(result)
     return result
@@ -268,8 +267,27 @@ def evaluate(gold, guess):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("guess", help="Guess KILT file")
-    parser.add_argument("gold", help="Gold KILT file")
+    parser.add_argument("--guess", help="Guess KILT file")
+    parser.add_argument("--gold", help="Gold KILT file")
+    parser.add_argument("--output_dir", help="Output dir to store the results")
+    parser.add_argument("--dataset", help="Name of the dataset")
+    parser.add_argument("--k", type=int, default=1, help="K value")
 
     args = parser.parse_args()
-    evaluate(args.gold, args.guess)
+    result = evaluate(args.gold, args.guess)
+
+    k = args.k
+    file_path = f"{args.output_dir}/{args.dataset}_results.json"
+
+    if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+        with open(file_path, "r") as file:
+            data = json.load(file)
+    else:
+        # create the file if it doesn't exist
+        with open(file_path, "w") as file:
+            json.dump({}, file)
+        data = {}
+
+    data[f"k={args.k}"] = result
+    with open(file_path, "w") as file:
+        json.dump(data, file, indent=4)
